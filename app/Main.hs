@@ -12,12 +12,18 @@ data World = World
     , worldCurrentStep :: Int        -- which step we're on
     , worldValue :: String           -- user's typed input
     , worldMode :: Mode              -- are we animating or idle?
+    , worldOperation :: Operation    -- current operation mode
+    , worldSearchResult :: Maybe Bool -- result of search (Just True/False or Nothing)
+    , worldPendingTree :: Maybe (BST Int)  -- tree to apply after animation completes
     }
 
 data Mode = Idle | Animating
     deriving (Eq)
 
--- Start with empty tree
+data Operation = Insert | Search | Delete
+    deriving (Eq, Show)
+
+-- Start with empty tree in Insert mode
 initialWorld :: World
 initialWorld = World
     { worldTree = Empty
@@ -25,95 +31,173 @@ initialWorld = World
     , worldCurrentStep = 0
     , worldValue = ""
     , worldMode = Idle
+    , worldOperation = Insert
+    , worldSearchResult = Nothing
+    , worldPendingTree = Nothing
     }
 
 main :: IO ()
 main = play
-    (InWindow "BST Visualizer" (800, 600) (100, 100))
+    (InWindow "BST Visualizer" (1200, 800) (100, 100))
     white
-    2  -- 2 animation steps per second
+    1  -- 1 step per second
     initialWorld
     drawWorld
     handleEvent
     updateWorld
 
--- Render everything: tree + UI text
+-- Button dimensions and positions
+insertButtonBounds :: (Float, Float, Float, Float)  -- (x1, y1, x2, y2)
+insertButtonBounds = (-550, 340, -450, 370)
+
+searchButtonBounds :: (Float, Float, Float, Float)
+searchButtonBounds = (-440, 340, -340, 370)
+
+deleteButtonBounds :: (Float, Float, Float, Float)
+deleteButtonBounds = (-330, 340, -230, 370)
+
+-- Check if point is inside button bounds
+insideButton :: (Float, Float, Float, Float) -> Float -> Float -> Bool
+insideButton (x1, y1, x2, y2) px py =
+    px >= x1 && px <= x2 && py >= y1 && py <= y2
+
+-- Render everything: tree + UI
 drawWorld :: World -> Picture
 drawWorld world =
-    let depth = treeDepth (worldTree world)
-        -- Adjust starting y position based on depth
-        startY = if depth > 4 then 270 else 200
-        -- Adjust initial spacing based on depth
-        spacing = calculateSpacing depth
+    let currentTree = if worldMode world == Animating && worldCurrentStep world < length (worldSteps world)
+                      then stepTree (worldSteps world !! worldCurrentStep world)
+                      else worldTree world
     in Pictures
-        [ translate 0 startY $ renderBSTWithHighlight
-            (worldTree world)
+        [ translate 0 250 $ renderBSTWithHighlight
+            currentTree
             (getCurrentHighlight world)
-            0 0 spacing
-        , translate (-350) 250 $ scale 0.15 0.15 $
-            color black $ text "Enter value and press ENTER"
-        , translate (-350) 220 $ scale 0.15 0.15 $
-            color black $ text ("Current input: " ++ worldValue world)
+            (getHighlightColor world)
+        , drawButtons (worldOperation world)
+        , translate (-550) 300 $ scale 0.12 0.12 $
+            color black $ text ("Input: " ++ worldValue world)
+        , translate (-550) 270 $ scale 0.12 0.12 $
+            color (greyN 0.5) $ text "Click button to select operation"
         , drawStatus world
         ]
 
--- Calculate tree depth
-treeDepth :: BST a -> Int
-treeDepth Empty = 0
-treeDepth (Node _ l r) = 1 + max (treeDepth l) (treeDepth r)
+-- Get highlight color based on operation
+getHighlightColor :: World -> Color
+getHighlightColor world = case worldOperation world of
+    Insert -> makeColorI 220 50 50 255   -- red for insert
+    Search -> makeColorI 255 165 0 255   -- orange for search
+    Delete -> makeColorI 180 50 50 255   -- dark red for delete
 
--- Calculate initial horizontal spacing based on depth - increased values
-calculateSpacing :: Int -> Float
-calculateSpacing depth
-    | depth <= 3 = 200
-    | depth == 4 = 180
-    | depth == 5 = 160
-    | depth == 6 = 140
-    | depth == 7 = 120
-    | depth == 8 = 100
-    | otherwise = 80
+-- Draw the three buttons
+drawButtons :: Operation -> Picture
+drawButtons currentOp = Pictures
+    [ drawButton insertButtonBounds "Insert" (currentOp == Insert)
+    , drawButton searchButtonBounds "Search" (currentOp == Search)
+    , drawButton deleteButtonBounds "Delete" (currentOp == Delete)
+    ]
+
+-- Draw a single button (highlighted if selected)
+drawButton :: (Float, Float, Float, Float) -> String -> Bool -> Picture
+drawButton (x1, y1, x2, y2) label isSelected =
+    let centerX = (x1 + x2) / 2
+        centerY = (y1 + y2) / 2
+        width = x2 - x1
+        height = y2 - y1
+        bgColor = if isSelected
+                  then makeColorI 70 130 180 255  -- blue if selected
+                  else makeColorI 200 200 200 255 -- gray if not
+        textColor = if isSelected then white else black
+    in Pictures
+        [ -- Button background
+          color bgColor $ translate centerX centerY $ rectangleSolid width height
+          -- Button border
+        , color black $ translate centerX centerY $ rectangleWire width height
+          -- Button label
+        , translate (x1 + 10) (centerY - 5) $ scale 0.12 0.12 $ color textColor $ text label
+        ]
 
 -- Show the current step's description
 drawStatus :: World -> Picture
 drawStatus world
     | worldMode world == Animating && worldCurrentStep world < length (worldSteps world) =
         let step = worldSteps world !! worldCurrentStep world
-        in translate (-350) (-250) $ scale 0.12 0.12 $
+        in translate (-550) (-350) $ scale 0.12 0.12 $
            color black $ text (stepDesc step)
+    | worldMode world == Idle =
+        let modeText = "Mode: " ++ show (worldOperation world)
+            resultText = case worldSearchResult world of
+                Just True -> " | Last search: FOUND"
+                Just False -> " | Last search: NOT FOUND"
+                Nothing -> ""
+        in translate (-550) (-350) $ scale 0.12 0.12 $
+           color (greyN 0.5) $ text (modeText ++ resultText)
     | otherwise = Blank
 
--- Figure out which node to highlight red (the one we're currently examining)
+-- Figure out which node to highlight (from the step's highlight field)
 getCurrentHighlight :: World -> Maybe Int
 getCurrentHighlight world
     | worldMode world == Animating && worldCurrentStep world < length (worldSteps world) =
-        let step = worldSteps world !! worldCurrentStep world
-        in extractValue (stepTree step)
+        stepHighlight (worldSteps world !! worldCurrentStep world)
     | otherwise = Nothing
-  where
-    extractValue Empty = Nothing
-    extractValue (Node v _ _) = Just v
 
--- Handle keyboard: digits to type, ENTER to insert, BACKSPACE to delete
+-- Handle events
 handleEvent :: Event -> World -> World
+
+-- Mouse clicks on buttons
+handleEvent (EventKey (MouseButton LeftButton) Down _ (mx, my)) world
+    | worldMode world == Idle =
+        if insideButton insertButtonBounds mx my
+        then world { worldOperation = Insert, worldSearchResult = Nothing }
+        else if insideButton searchButtonBounds mx my
+        then world { worldOperation = Search, worldSearchResult = Nothing }
+        else if insideButton deleteButtonBounds mx my
+        then world { worldOperation = Delete, worldSearchResult = Nothing }
+        else world
+    | otherwise = world
+
 -- Add digits when in Idle mode
 handleEvent (EventKey (Char c) Down _ _) world
     | worldMode world == Idle && c >= '0' && c <= '9' =
         world { worldValue = worldValue world ++ [c] }
     | otherwise = world
 
--- Insert value on ENTER
+-- Execute operation on ENTER
 handleEvent (EventKey (SpecialKey KeyEnter) Down _ _) world
     | worldMode world == Idle && not (null (worldValue world)) =
         let val = read (worldValue world) :: Int
-            steps = insertSteps val (worldTree world)
-            newTree = insert val (worldTree world)
-        in world
-            { worldTree = newTree
-            , worldSteps = steps
-            , worldCurrentStep = 0
-            , worldValue = ""
-            , worldMode = Animating
-            }
+        in case worldOperation world of
+            Insert ->
+                let steps = insertSteps val (worldTree world)
+                    newTree = insert val (worldTree world)
+                in world
+                    { worldSteps = steps
+                    , worldCurrentStep = 0
+                    , worldValue = ""
+                    , worldMode = Animating
+                    , worldSearchResult = Nothing
+                    , worldPendingTree = Just newTree
+                    }
+            Search ->
+                let steps = searchSteps val (worldTree world)
+                    found = search val (worldTree world)
+                in world
+                    { worldSteps = steps
+                    , worldCurrentStep = 0
+                    , worldValue = ""
+                    , worldMode = Animating
+                    , worldSearchResult = Just found
+                    , worldPendingTree = Nothing
+                    }
+            Delete ->
+                let steps = deleteSteps val (worldTree world)
+                    newTree = delete val (worldTree world)
+                in world
+                    { worldSteps = steps
+                    , worldCurrentStep = 0
+                    , worldValue = ""
+                    , worldMode = Animating
+                    , worldSearchResult = Nothing
+                    , worldPendingTree = Just newTree
+                    }
     | otherwise = world
 
 -- Delete last character with BACKSPACE
@@ -141,6 +225,20 @@ updateWorld _ world
     | worldMode world == Animating =
         let nextStep = worldCurrentStep world + 1
         in if nextStep >= length (worldSteps world)
-           then world { worldMode = Idle, worldCurrentStep = 0, worldSteps = [] }
+           then -- Animation complete, apply pending tree update
+                case worldPendingTree world of
+                    Just newTree -> world
+                        { worldMode = Idle
+                        , worldCurrentStep = 0
+                        , worldSteps = []
+                        , worldTree = newTree
+                        , worldPendingTree = Nothing
+                        }
+                    Nothing -> world
+                        { worldMode = Idle
+                        , worldCurrentStep = 0
+                        , worldSteps = []
+                        , worldPendingTree = Nothing
+                        }
            else world { worldCurrentStep = nextStep }
     | otherwise = world
