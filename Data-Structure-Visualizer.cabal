@@ -62,8 +62,9 @@ executable Data-Structure-Visualizer
 
     -- Modules included in this executable, other than Main.
     other-modules:
-        BST
-        Render
+        Common.UI,
+        DataStructures.BST.BST,
+        DataStructures.BST.BSTVisualizer
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:

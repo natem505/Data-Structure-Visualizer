@@ -1,4 +1,4 @@
-module BST
+module DataStructures.BST.BST
     ( BST(..)
     , Step(..)
     , insert
@@ -17,13 +17,9 @@ data BST a = Empty | Node a (BST a) (BST a)
 data Step a = Step
     { stepTree :: BST a
     , stepDesc :: String
-    , stepHighlight :: Maybe a  -- which node to highlight
+    , stepHighlight :: Maybe a
     }
     deriving (Show)
-
-------------------------
--- Basic BST operations
-------------------------
 
 search :: Ord a => a -> BST a -> Bool
 search _ Empty = False
@@ -37,7 +33,7 @@ insert x Empty = Node x Empty Empty
 insert x (Node v l r)
     | x < v     = Node v (insert x l) r
     | x > v     = Node v l (insert x r)
-    | otherwise = Node v l r  -- ignore duplicates
+    | otherwise = Node v l r
 
 delete :: Ord a => a -> BST a -> BST a
 delete _ Empty = Empty
@@ -57,14 +53,9 @@ findMin Empty = error "findMin called on Empty tree"
 findMin (Node v Empty _) = v
 findMin (Node _ left _)  = findMin left
 
--------------------------------------
--- Insert that RETURNS VISUAL STEPS
--------------------------------------
-
 insertSteps :: (Show a, Ord a) => a -> BST a -> [Step a]
 insertSteps x tree = goInsert tree tree
   where
-    -- Pass both original tree and current subtree
     goInsert original Empty =
         [Step (insert x original) ("Inserted " ++ show x) (Just x)]
 
@@ -77,10 +68,6 @@ insertSteps x tree = goInsert tree tree
             : goInsert original r
         | otherwise =
             [Step original ("Value " ++ show x ++ " already exists") (Just v)]
-
--------------------------------------
--- Search that RETURNS VISUAL STEPS
--------------------------------------
 
 searchSteps :: (Show a, Ord a) => a -> BST a -> [Step a]
 searchSteps x tree = goSearch tree
@@ -98,10 +85,6 @@ searchSteps x tree = goSearch tree
             Step tree ("Comparing " ++ show x ++ " > " ++ show v ++ ", go right") (Just v)
             : goSearch r
 
--------------------------------------
--- Delete that RETURNS VISUAL STEPS
--------------------------------------
-
 deleteSteps :: (Show a, Ord a) => a -> BST a -> [Step a]
 deleteSteps x tree = goDelete tree tree
   where
@@ -116,13 +99,11 @@ deleteSteps x tree = goDelete tree tree
             Step original ("Comparing " ++ show x ++ " > " ++ show v ++ ", go right") (Just v)
             : goDelete original r
         | otherwise =
-            -- Found the node to delete
             let deletedTree = delete x original
             in [ Step original ("Found " ++ show x ++ ", deleting...") (Just v)
                , Step deletedTree (describeDelete v l r) Nothing
                ]
 
--- Describe what happened during deletion
 describeDelete :: (Show a, Ord a) => a -> BST a -> BST a -> String
 describeDelete v Empty Empty = "Deleted leaf node " ++ show v
 describeDelete v Empty _ = "Deleted " ++ show v ++ ", promoted right child"
