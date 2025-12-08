@@ -7,6 +7,9 @@ module DataStructures.BST.BST
     , insertSteps
     , searchSteps
     , deleteSteps
+    , inOrderSteps
+    , preOrderSteps
+    , postOrderSteps
     ) where
 
 -- Core tree type
@@ -111,3 +114,33 @@ describeDelete v _ Empty = "Deleted " ++ show v ++ ", promoted left child"
 describeDelete v _ r =
     let successor = findMin r
     in "Deleted " ++ show v ++ ", replaced with successor " ++ show successor
+
+-- In-order traversal (Left, Root, Right)
+inOrderSteps :: (Show a) => BST a -> [Step a]
+inOrderSteps tree = go tree
+  where
+    go Empty = []
+    go (Node v l r) =
+        go l ++
+        [Step tree ("Visit " ++ show v ++ " (in-order)") (Just v)] ++
+        go r
+
+-- Pre-order traversal (Root, Left, Right)
+preOrderSteps :: (Show a) => BST a -> [Step a]
+preOrderSteps tree = go tree
+  where
+    go Empty = []
+    go (Node v l r) =
+        [Step tree ("Visit " ++ show v ++ " (pre-order)") (Just v)] ++
+        go l ++
+        go r
+
+-- Post-order traversal (Left, Right, Root)
+postOrderSteps :: (Show a) => BST a -> [Step a]
+postOrderSteps tree = go tree
+  where
+    go Empty = []
+    go (Node v l r) =
+        go l ++
+        go r ++
+        [Step tree ("Visit " ++ show v ++ " (post-order)") (Just v)]

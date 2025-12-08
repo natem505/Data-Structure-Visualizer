@@ -64,7 +64,9 @@ executable Data-Structure-Visualizer
     other-modules:
         Common.UI,
         DataStructures.BST.BST,
-        DataStructures.BST.BSTVisualizer
+        DataStructures.AVL.AVL,
+        DataStructures.Heap.Heap,
+        DataStructures.HashTable.HashTable
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
